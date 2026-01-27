@@ -1,0 +1,3 @@
+# PICS
+
+Project initialized.
