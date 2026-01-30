@@ -1,4 +1,5 @@
 import sys
+import os
 import time
 import logging
 import cv2
@@ -83,8 +84,23 @@ class XimeaCamera:
             self.xiapi = xiapi
             logging.info("XIMEA SDK found.")
         except ImportError:
-            self.xiapi = None
-            logging.warning("XIMEA SDK not found. Install 'ximea' package.")
+            self._try_add_ximea_path()
+            try:
+                from ximea import xiapi
+                self.xiapi = xiapi
+                logging.info("XIMEA SDK found via system path.")
+            except ImportError:
+                self.xiapi = None
+                logging.warning("XIMEA SDK not found. Install 'ximea' package.")
+
+    def _try_add_ximea_path(self):
+        # Add default XIMEA Python API path if present and not already on sys.path
+        candidates = [
+            r"C:\XIMEA\API\Python\v3",
+        ]
+        for p in candidates:
+            if os.path.isdir(p) and p not in sys.path:
+                sys.path.append(p)
 
     def check_available(self):
         return self.xiapi is not None

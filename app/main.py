@@ -2,6 +2,7 @@ import sys
 import os
 import time
 import logging
+import ctypes
 import cv2
 import re
 import numpy as np
@@ -33,9 +34,15 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("APIS (Automated Polarization Imaging System)")
-        icon_path = os.path.join(os.path.dirname(__file__), "assets", "apis_logo.png")
-        if os.path.isfile(icon_path):
-            self.setWindowIcon(QIcon(icon_path))
+        icon_candidates = [
+            os.path.join(os.path.dirname(__file__), "assets", "apis_logo.png"),
+            os.path.join(os.path.dirname(__file__), "..", "assets", "icon.ico"),
+            os.path.join(os.path.dirname(__file__), "assets", "icon.ico"),
+        ]
+        for icon_path in icon_candidates:
+            if os.path.isfile(icon_path):
+                self.setWindowIcon(QIcon(icon_path))
+                break
         self.resize(1400, 850)
         
         # 1. Init Base State & UI (Required for Logging)
@@ -870,10 +877,20 @@ class MainWindow(QMainWindow):
         event.accept()
 
 if __name__ == "__main__":
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("APIS.AutomatedPolarizationImagingSystem")
+    except Exception:
+        pass
     app = QApplication(sys.argv)
-    icon_path = os.path.join(os.path.dirname(__file__), "assets", "apis_logo.png")
-    if os.path.isfile(icon_path):
-        app.setWindowIcon(QIcon(icon_path))
+    icon_candidates = [
+        os.path.join(os.path.dirname(__file__), "assets", "apis_logo.png"),
+        os.path.join(os.path.dirname(__file__), "..", "assets", "icon.ico"),
+        os.path.join(os.path.dirname(__file__), "assets", "icon.ico"),
+    ]
+    for icon_path in icon_candidates:
+        if os.path.isfile(icon_path):
+            app.setWindowIcon(QIcon(icon_path))
+            break
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

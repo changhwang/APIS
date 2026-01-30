@@ -7,7 +7,8 @@ from apis.controller import PicsController
 
 def main():
     print("=== APIS Hardware Check ===")
-    port = input("Enter COM port (e.g. COM3): ").strip()
+    print("Use the COM port of the Arduino connected to the motors.")
+    port = input("Enter Arduino COM port (e.g. COM3): ").strip()
     if not port:
         print("No port entered. Exiting.")
         return

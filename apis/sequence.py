@@ -98,7 +98,7 @@ class PicsSequence:
                     io.save_image(fpath, img, color_mode="rgb")
                     
                     # Metalog
-                    io.append_to_log(os.path.join(save_dir, f"{sample_id}_log.csv"), {
+                    io.append_to_log(os.path.join(save_dir, sample_id, f"{sample_id}_log.csv"), {
                         "timestamp": utils.get_timestamp_iso(),
                         "mode": "crosspol",
                         "exposure_us": crosspol_exposure_us,
@@ -133,7 +133,7 @@ class PicsSequence:
                     fpath = os.path.join(normal_dir, fname)
                     io.save_image(fpath, img, color_mode="rgb")
                     
-                    io.append_to_log(os.path.join(save_dir, f"{sample_id}_log.csv"), {
+                    io.append_to_log(os.path.join(save_dir, sample_id, f"{sample_id}_log.csv"), {
                         "timestamp": utils.get_timestamp_iso(),
                         "mode": "normal",
                         "exposure_us": normal_exposure_us,

@@ -13,12 +13,19 @@ env/
 
 # Project Data & Logs
 data/
-*.tif
-*.png
-*.csv
 *.log
 *.jsonl
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Build / Distribution
+build_venv/
+build/*
+!build/apis.spec
+!build/check_hardware.spec
+!build/build.ps1
+!build/make_icon.py
+dist/
+release/*.zip

@@ -1,50 +1,50 @@
 # APIS: Automated Polarization Imaging System
 
-A control system for an automated 2-axis polarization imaging setup using Arduino, Python (PyQt6), and XIMEA cameras.
-
-## 1. Installation
-
-### Hardware Requirements
-- Polarizer motor (Axis 1): SG90 Servo @ Pin 10
-- Sample motor (Axis 2): HS-318 Servo @ Pin 11
-- Camera: XIMEA USB 3.0/3.1 camera
-- Power: External 5V (>=2A) for servos. Shared ground with Arduino is mandatory.
-
-### Software Prerequisites
-1. Python 3.9+
-2. Arduino IDE (for flashing firmware)
-3. XIMEA Software Package (drivers and API)
-
-### Python Environment Setup
-```bash
-# Create venv
-python -m venv venv
-
-# Activate venv (Windows)
-venv\Scriptsctivate
-
-# Install dependencies
-pip install -r requirements.txt
-```
+APIS is a control system for an automated 2-axis polarization imaging setup using Arduino, Python (PyQt6), and XIMEA cameras.
 
 ---
 
-## 2. XIMEA Camera Setup (Critical)
+## 1. What You Get
 
-The XIMEA Python API (xiapi) is not available on PyPI. You must install the drivers and then link the API into your virtual environment.
+- GUI application (live view, manual motor control, and sequence automation)
+- Safety logic (LATCHED/ARMED, ESTOP, RESET)
+- Image capture + CSV logging
+- Hardware check tool for quick diagnostics
 
-### Step A: Driver Installation
-1. Download the XIMEA Software Package for Windows from the XIMEA support site.
-2. Run the installer and select API -> Python.
-3. Complete the installation for your interface (USB3).
+---
 
-### Step B: Link Python API (for virtual environments)
-If `pip install ximea` fails (common), manually copy the API into your venv.
+## 2. Requirements
 
-1. Locate the installed API folder (default):
+### Hardware
+- Polarizer motor (Axis 1): SG90 servo @ Pin 10
+- Sample motor (Axis 2): HS-318 servo @ Pin 11
+- Camera: XIMEA USB 3.0/3.1 camera
+- Power: External 5V (>=2A) for servos
+- Common ground between Arduino GND and servo PSU GND
+
+### Software
+- Python 3.9+
+- Arduino IDE (for flashing firmware)
+- XIMEA Windows Software Package (drivers + xiAPI)
+
+---
+
+## 3. Installation (Development)
+
+### 3.1 Create venv and install deps
+```bash
+python -m venv venv
+venv\Scriptsctivate
+pip install -r requirements.txt
+```
+
+### 3.2 XIMEA Python API (xiAPI)
+The XIMEA Python API is not on PyPI. Install the XIMEA Software Package first, then link the API into your venv.
+
+1. Install the XIMEA Software Package (drivers + API)
+2. Locate the API folder (default):
    - `C:\XIMEA\API\Python3`
-2. Copy the `ximea` folder inside it.
-3. Paste into your venv:
+3. Copy the `ximea` folder into:
    - `APISenv\Lib\site-packages\`
 
 Verification:
@@ -52,94 +52,125 @@ Verification:
 python -c "import ximea; print('Success')"
 ```
 
-Warning:
-- The XIMEA API is proprietary software.
-- Do not commit `venv/Lib/site-packages/ximea` to a public repo.
-
 ---
 
-## 3. Quick Start
+## 4. Quick Start
 
-### 1) Flash Firmware
-Open `firmware/APIS_Firmware/APIS_Firmware.ino` in Arduino IDE and upload to your board.
+### 4.1 Flash Firmware
+Open `firmware/APIS_Firmware/APIS_Firmware.ino` and upload to your Arduino.
 
-### 2) Run GUI
+### 4.2 Run GUI
 ```bash
 python app/main.py
 ```
 
 ---
 
-## 4. App Usage Guide
+## 5. App Usage Guide
 
 ### Safety Bar (Top)
-- Controller and camera connection state are shown.
-- Current polarizer angle, sample angle, exposure, and gain are shown.
-- ESTOP (Red): Immediately cuts power/torque to motors.
-- RESET / ARM (Green): Re-engages motors. Required to start sequence.
-- HOME: Moves both motors to 0 degrees.
+- Shows controller/camera state and current angles/exposure/gain
+- ESTOP: immediately cuts motor torque (LATCHED)
+- RESET / ARM: re-engages motors (ARMED)
+- HOME: moves both motors to 0 degrees
 
 ### Device Connections
-- Select COM port -> Connect Controller.
-- Connect Camera.
-- If the XIMEA SDK is missing, it falls back to DummyCamera (simulation).
-  - DummyCamera generates a synthetic live view so you can build UI/logic without hardware.
-  - This is useful for development when XIMEA cameras are unavailable.
+- Select COM port -> Connect Controller
+- Connect Camera
+- If XIMEA is not available, the app falls back to DummyCamera
 
 ### Manual Motor Control (Absolute Movement)
-- Set absolute angle (0-180) and click Move for each axis.
-- +45 buttons increment the current value by 45 degrees.
-- Manual moves are only enabled while ARMED.
+- Set absolute angle (0-180) and click Move
+- +45 buttons increment by 45 degrees
 
 ### Camera Settings
-- Set exposure (us) and gain (dB) and click Apply Settings.
-- These values are shown in the top status bar.
+- Set exposure (us) and gain (dB)
+- Click Apply Settings
 
 ### Live View and Snapshot
-- Live view shows the current camera stream.
-- Snapshot:
-  - Set Filename and Save Dir.
-  - Click Snapshot to save a TIFF.
-  - Metadata is logged to `snapshot_log.csv` in the same folder.
+- Live view shows the camera stream
+- Snapshot saves TIFF to the selected folder
+- Snapshot metadata is logged to `snapshot_log.csv`
 
 ### Sequence Control
-- Save Directory and Sample ID are required.
-- Modes: enable Crosspol, Normal, or both.
-- Exposure defaults:
-  - Crosspol: 50000 us
-  - Normal: 12000 us
-- Angles input:
+- Set Save Directory and Sample ID
+- Choose modes: Crosspol / Normal
+- Set exposures (defaults: Crosspol 50000 us, Normal 12000 us)
+- Set angles (list or range)
   - List: `90,60,45,30,0`
   - Range: `0:180:15`
-- Settling Time (s): motor settle delay after each movement.
+- Settling Time: motor settle delay after each move
 
 ### Polarizer Angles (Sequence)
-- Crosspol mode: polarizer moves to 90 degrees.
-- Normal mode: polarizer moves to 0 degrees.
+- Crosspol: polarizer moves to 90 degrees
+- Normal: polarizer moves to 0 degrees
 
-### Outputs
-- Images are saved under:
-  - `{SaveDir}/{SampleID}/crosspol` and/or `{SaveDir}/{SampleID}/normal`
+---
+
+## 6. Outputs
+
+- Images:
+  - `{SaveDir}/{SampleID}/crosspol`
+  - `{SaveDir}/{SampleID}/normal`
 - Log file:
-  - `{SaveDir}/{SampleID}_log.csv`
+  - `{SaveDir}/{SampleID}/{SampleID}_log.csv`
 - Snapshot log:
   - `{SaveDir}/snapshot_log.csv`
 
 ---
 
-## 5. Safety Logic
-- LATCHED: default on boot or ESTOP. Motors detached (no torque).
-- ARMED: motors attached (holding torque). Required for motion.
-- Protocol: 2-way handshake. Commands are rejected if LATCHED.
+## 7. Safety Logic
+
+- LATCHED: default on boot or ESTOP, motors detached
+- ARMED: motors attached, motion enabled
+- Commands are rejected in LATCHED state
 
 ---
 
-## 6. Verification
-- Automated tests: `tests/test_mock_serial.py` (controller logic)
-- Manual hardware check: `scripts/check_hardware.py` (motion limits, ESTOP)
+## 8. Verification
+
+- Automated tests: `tests/test_mock_serial.py`
+- Manual hardware check: `scripts/check_hardware.py`
+- Distribution includes `check_hardware` for quick COM port and ESTOP validation
 
 ---
 
-## 7. Repository Notes
-- `data/` and `venv/` are ignored by git.
-- `.vscode/` is ignored by git.
+## 9. Build and Distribution (Windows)
+
+Recommended flow:
+1) PyInstaller onedir build
+2) Zip the dist folder for distribution
+3) (Later) Inno Setup for installer packaging
+
+### Build prerequisites
+- Use a clean build venv with PyQt6 only (do not install PySide6/PyQt5)
+- Icon file: `assets/icon.ico` (already provided)
+
+### Build (spec-based)
+- Spec files: `build/apis.spec`, `build/check_hardware.spec`
+- Build script: `build/build.ps1`
+
+Example:
+```powershell
+.uilduild.ps1 -Version 0.1.0
+```
+
+### Distribution package
+The build script produces:
+- `dist/APIS/` (GUI app)
+- `dist/check_hardware/` (console tool)
+- `release/APIS-win64-vX.Y.Z.zip` containing:
+  - `APIS/`
+  - `check_hardware/`
+  - `README.txt`
+  - `prereq_checklist.md`
+
+### XIMEA prerequisite
+XIMEA drivers/xiAPI must be installed first. The EXE does not bundle the SDK.
+
+---
+
+## 10. Repository Notes
+
+- `data/`, `dist/`, and `release/*.zip` are ignored by git
+- `.vscode/` and `build_venv/` are ignored by git
