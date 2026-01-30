@@ -34,7 +34,7 @@ APIS is a control system for an automated 2-axis polarization imaging setup usin
 ### 3.1 Create venv and install deps
 ```bash
 python -m venv venv
-venv\Scriptsctivate
+venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
@@ -43,9 +43,9 @@ The XIMEA Python API is not on PyPI. Install the XIMEA Software Package first, t
 
 1. Install the XIMEA Software Package (drivers + API)
 2. Locate the API folder (default):
-   - `C:\XIMEA\API\Python3`
+   - `C:\XIMEA\API\Python\v3`
 3. Copy the `ximea` folder into:
-   - `APISenv\Lib\site-packages\`
+   - `APIS\venv\Lib\site-packages\`
 
 Verification:
 ```bash
@@ -152,7 +152,7 @@ Recommended flow:
 
 Example:
 ```powershell
-.uilduild.ps1 -Version 0.1.0
+.\build\build.ps1 -Version 0.1.0
 ```
 
 ### Distribution package
