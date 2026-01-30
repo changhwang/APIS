@@ -8,6 +8,13 @@ APIS (Latin for 'bee') is a control system for an automated 2-axis polarization 
 
 ---
 
+## 0. Quick Start (3 lines)
+1) Install XIMEA drivers + xiAPI, and flash Arduino firmware
+2) Run `python app/main.py`
+3) Connect Camera, Connect Controller, press RESET/ARM, then START SEQUENCE
+
+---
+
 ## 1. What You Get
 
 - GUI application (live view, manual motor control, and sequence automation)
