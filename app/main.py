@@ -12,14 +12,14 @@ from PyQt6.QtWidgets import (
     QFileDialog, QMessageBox, QFrame, QGridLayout
 )
 from PyQt6.QtCore import Qt, pyqtSlot, QTimer
-from PyQt6.QtGui import QImage, QPixmap, QColor, QPalette
+from PyQt6.QtGui import QImage, QPixmap, QColor, QPalette, QIcon
 
 # Add project root to path
 sys.path.append(".") 
 
-from apis.pics_controller import PicsController
-from apis.pics_sequence import PicsSequence
-from apis import config, utils, pics_io
+from apis.controller import PicsController
+from apis.sequence import PicsSequence
+from apis import config, utils, io
 from app.workers import CameraThread, SequenceThread, DummyCamera, XimeaCamera
 
 # --- UI STATES ---
@@ -32,7 +32,10 @@ STATE_ERROR = "ERROR"
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Polarizer Studio (APIS)")
+        self.setWindowTitle("APIS (Automated Polarization Imaging System)")
+        icon_path = os.path.join(os.path.dirname(__file__), "assets", "apis_logo.png")
+        if os.path.isfile(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
         self.resize(1400, 850)
         
         # 1. Init Base State & UI (Required for Logging)
@@ -627,8 +630,8 @@ class MainWindow(QMainWindow):
             fname = f"{base}_{int(time.time())}.tif"
             save_dir = self.edt_snapshot_dir.text()
             path = os.path.join(save_dir, fname)
-            pics_io.save_image(path, self._last_frame_rgb, color_mode="rgb")
-            pics_io.append_to_log(os.path.join(save_dir, "snapshot_log.csv"), {
+            io.save_image(path, self._last_frame_rgb, color_mode="rgb")
+            io.append_to_log(os.path.join(save_dir, "snapshot_log.csv"), {
                 "timestamp": utils.get_timestamp_iso(),
                 "mode": "snapshot",
                 "exposure_us": self.spin_exp.value(),
@@ -651,8 +654,8 @@ class MainWindow(QMainWindow):
                 fname = f"{base}_{int(time.time())}.tif"
                 save_dir = self.edt_snapshot_dir.text()
                 path = os.path.join(save_dir, fname)
-                pics_io.save_image(path, img, color_mode="rgb")
-                pics_io.append_to_log(os.path.join(save_dir, "snapshot_log.csv"), {
+                io.save_image(path, img, color_mode="rgb")
+                io.append_to_log(os.path.join(save_dir, "snapshot_log.csv"), {
                     "timestamp": utils.get_timestamp_iso(),
                     "mode": "snapshot",
                     "exposure_us": self.spin_exp.value(),
@@ -868,6 +871,9 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    icon_path = os.path.join(os.path.dirname(__file__), "assets", "apis_logo.png")
+    if os.path.isfile(icon_path):
+        app.setWindowIcon(QIcon(icon_path))
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

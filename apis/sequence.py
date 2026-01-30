@@ -1,7 +1,7 @@
 import time
 import logging
 import os
-from . import config, utils, pics_io
+from . import config, utils, io
 
 class PicsSequence:
     def __init__(self, controller, camera, log_callback=None):
@@ -95,10 +95,10 @@ class PicsSequence:
                     img = self.cam.capture()
                     fname = f"{sample_id}_crosspol_{angle:03d}.tif"
                     fpath = os.path.join(crosspol_dir, fname)
-                    pics_io.save_image(fpath, img, color_mode="rgb")
+                    io.save_image(fpath, img, color_mode="rgb")
                     
                     # Metalog
-                    pics_io.append_to_log(os.path.join(save_dir, f"{sample_id}_log.csv"), {
+                    io.append_to_log(os.path.join(save_dir, f"{sample_id}_log.csv"), {
                         "timestamp": utils.get_timestamp_iso(),
                         "mode": "crosspol",
                         "exposure_us": crosspol_exposure_us,
@@ -131,9 +131,9 @@ class PicsSequence:
                     img = self.cam.capture()
                     fname = f"{sample_id}_normal_{angle:03d}.tif"
                     fpath = os.path.join(normal_dir, fname)
-                    pics_io.save_image(fpath, img, color_mode="rgb")
+                    io.save_image(fpath, img, color_mode="rgb")
                     
-                    pics_io.append_to_log(os.path.join(save_dir, f"{sample_id}_log.csv"), {
+                    io.append_to_log(os.path.join(save_dir, f"{sample_id}_log.csv"), {
                         "timestamp": utils.get_timestamp_iso(),
                         "mode": "normal",
                         "exposure_us": normal_exposure_us,

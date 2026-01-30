@@ -3,7 +3,7 @@ import time
 # Add project root to path
 sys.path.append(".") 
 
-from apis.pics_controller import PicsController
+from apis.controller import PicsController
 
 def main():
     print("=== APIS Hardware Check ===")

@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, patch
 import time
-from apis.pics_controller import PicsController
+from apis.controller import PicsController
 from apis import config
 
 class TestPicsController(unittest.TestCase):
