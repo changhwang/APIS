@@ -1,6 +1,10 @@
 # APIS: Automated Polarization Imaging System
 
-APIS is a control system for an automated 2-axis polarization imaging setup using Arduino, Python (PyQt6), and XIMEA cameras.
+APIS (Latin for ?bee?) is a control system for an automated 2-axis polarization imaging setup using Arduino, Python (PyQt6), and XIMEA cameras.
+
+---
+
+![APIS logo](app/assets/APIS_logo.png)
 
 ---
 
