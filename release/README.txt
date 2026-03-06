@@ -1,5 +1,7 @@
 APIS (Automated Polarization Imaging System)
 
+Package version: v0.1.1
+
 Installation and Run (Windows)
 1) Install prerequisites (see prereq_checklist.md)
 2) Unzip the distribution package

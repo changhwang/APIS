@@ -209,7 +209,7 @@ Recommended flow:
 
 Example:
 ```powershell
-.\build\build.ps1 -Version 0.1.0
+.\build\build.ps1 -Version 0.1.1
 ```
 
 ### Distribution package
