@@ -257,7 +257,7 @@ class MainWindow(QMainWindow):
         # Polarizer
         layout.addWidget(QLabel("Polarizer (Pin 10):"), 0, 0, 1, 2)
         self.spin_pol = QSpinBox()
-        self.spin_pol.setRange(0, 180)
+        self.spin_pol.setRange(config.POLARIZER_STAGE_MIN_ANGLE, config.POLARIZER_STAGE_MAX_ANGLE)
         self.btn_move_pol = QPushButton("Move")
         self.btn_move_pol.clicked.connect(lambda: self.on_manual_move(10))
         self.btn_pol_p45 = QPushButton("+45")
@@ -270,7 +270,7 @@ class MainWindow(QMainWindow):
         # Sample
         layout.addWidget(QLabel("Sample (Pin 11):"), 2, 0, 1, 2)
         self.spin_samp = QSpinBox()
-        self.spin_samp.setRange(0, 180)
+        self.spin_samp.setRange(config.SAMPLE_STAGE_MIN_ANGLE, config.SAMPLE_STAGE_MAX_ANGLE)
         self.btn_move_samp = QPushButton("Move")
         self.btn_move_samp.clicked.connect(lambda: self.on_manual_move(11))
         self.btn_samp_p45 = QPushButton("+45")
@@ -371,9 +371,11 @@ class MainWindow(QMainWindow):
         self.spin_exp_normal.setSingleStep(1000)
         layout.addWidget(self.spin_exp_normal, 4, 1, 1, 2)
         
-        layout.addWidget(QLabel("Angles (deg):"), 5, 0)
+        layout.addWidget(QLabel("Sample Angles (stage deg):"), 5, 0)
         self.edt_angles = QLineEdit("90,60,45,30,0")
-        self.edt_angles.setToolTip("List or range. Examples: 0,30,60 or 0:180:15")
+        self.edt_angles.setToolTip(
+            f"List or range. Examples: 0,30,60 or 0:{config.SAMPLE_STAGE_MAX_ANGLE}:15"
+        )
         layout.addWidget(self.edt_angles, 5, 1, 1, 2)
         
         layout.addWidget(QLabel("Settling Time (s, motor settle):"), 6, 0)
@@ -537,7 +539,8 @@ class MainWindow(QMainWindow):
 
     def on_add_angle(self, spinbox, deg):
         val = spinbox.value() + deg
-        if val > 180: val = 180
+        if val > spinbox.maximum():
+            val = spinbox.maximum()
         spinbox.setValue(val)
 
     def on_start_sequence(self):
@@ -559,7 +562,10 @@ class MainWindow(QMainWindow):
         exp_normal = self.spin_exp_normal.value()
         angles, angle_err = self.parse_angles(self.edt_angles.text())
         if not angles:
-            msg = "Enter angles as comma/space list or range.\nExamples: 0,30,60 or 0:180:15"
+            msg = (
+                "Enter stage angles as comma/space list or range.\n"
+                f"Examples: 0,30,60 or 0:{config.SAMPLE_STAGE_MAX_ANGLE}:15"
+            )
             if angle_err:
                 msg = f"{angle_err}\n\n{msg}"
             QMessageBox.warning(self, "Invalid Angles", msg)
@@ -765,8 +771,16 @@ class MainWindow(QMainWindow):
                     return [], f"Invalid range token: '{p}'"
                 if step == 0:
                     return [], f"Step cannot be 0 in '{p}'"
-                if start < 0 or start > 180 or end < 0 or end > 180:
-                    return [], f"Range out of bounds (0-180): '{p}'"
+                if (
+                    start < config.SAMPLE_STAGE_MIN_ANGLE
+                    or start > config.SAMPLE_STAGE_MAX_ANGLE
+                    or end < config.SAMPLE_STAGE_MIN_ANGLE
+                    or end > config.SAMPLE_STAGE_MAX_ANGLE
+                ):
+                    return [], (
+                        f"Range out of bounds ({config.SAMPLE_STAGE_MIN_ANGLE}-"
+                        f"{config.SAMPLE_STAGE_MAX_ANGLE}): '{p}'"
+                    )
                 if step > 0:
                     rng = range(start, end + 1, step)
                 else:
@@ -777,8 +791,11 @@ class MainWindow(QMainWindow):
                     val = int(p)
                 except ValueError:
                     return [], f"Invalid angle token: '{p}'"
-                if val < 0 or val > 180:
-                    return [], f"Angle out of bounds (0-180): '{p}'"
+                if val < config.SAMPLE_STAGE_MIN_ANGLE or val > config.SAMPLE_STAGE_MAX_ANGLE:
+                    return [], (
+                        f"Angle out of bounds ({config.SAMPLE_STAGE_MIN_ANGLE}-"
+                        f"{config.SAMPLE_STAGE_MAX_ANGLE}): '{p}'"
+                    )
                 angles.append(val)
         if not angles:
             return [], "No valid angles found."

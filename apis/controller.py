@@ -159,26 +159,65 @@ class PicsController:
 
     def home(self):
         """
-        Send HOME (96). Allowed only if ARMED.
+        Move both stages to 0 degrees in stage-angle coordinates.
         """
         if self.last_state == config.STATE_LATCHED:
             logging.error("Ignored HOME while LATCHED.")
             return False
-            
-        resp = self._send_raw_command(config.CMD_HOME, 0)
-        return "OK" in resp
+
+        pol_ok = self.rotate_polarizer(0)
+        samp_ok = self.rotate_sample(0)
+        return pol_ok and samp_ok
+
+    def _stage_to_servo_angle(self, stage_angle, ratio, direction, zero_offset, axis_name):
+        """
+        Convert a requested stage angle into the corresponding servo command angle.
+        """
+        servo_angle = zero_offset + (direction * stage_angle * ratio)
+        servo_cmd = int(round(servo_angle))
+
+        if servo_cmd < config.SERVO_MIN_ANGLE or servo_cmd > config.SERVO_MAX_ANGLE:
+            logging.error(
+                "%s angle %.2f deg maps to servo command %d, outside %d-%d.",
+                axis_name,
+                stage_angle,
+                servo_cmd,
+                config.SERVO_MIN_ANGLE,
+                config.SERVO_MAX_ANGLE,
+            )
+            return None
+
+        return servo_cmd
 
     def rotate_polarizer(self, angle):
         """
-        PP=10.
+        Rotate polarizer stage in stage-angle coordinates.
         """
-        return self.send_command(config.CMD_POLARIZER, angle)
+        servo_angle = self._stage_to_servo_angle(
+            angle,
+            config.POLARIZER_STAGE_TO_SERVO_RATIO,
+            config.POLARIZER_STAGE_DIRECTION,
+            config.POLARIZER_SERVO_ZERO_DEG,
+            "Polarizer",
+        )
+        if servo_angle is None:
+            return False
+        return self.send_command(config.CMD_POLARIZER, servo_angle)
 
     def rotate_sample(self, angle):
         """
-        PP=11.
+        Rotate sample stage in stage-angle coordinates.
         """
-        return self.send_command(config.CMD_SAMPLE, angle)
+        servo_angle = self._stage_to_servo_angle(
+            angle,
+            config.SAMPLE_STAGE_TO_SERVO_RATIO,
+            config.SAMPLE_STAGE_DIRECTION,
+            config.SAMPLE_SERVO_ZERO_DEG,
+            "Sample",
+        )
+        if servo_angle is None:
+            return False
+        return self.send_command(config.CMD_SAMPLE, servo_angle)
 
     def get_state(self):
         return self.last_state

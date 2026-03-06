@@ -8,10 +8,12 @@ APIS (Latin for 'bee') is a control system for an automated 2-axis polarization 
 
 ---
 
-## 0. Quick Start (3 lines)
+## 0. Quick Start
 1) Install XIMEA drivers + xiAPI, and flash Arduino firmware
-2) Run `python app/main.py`
-3) Connect Camera, Connect Controller, press RESET/ARM, then START SEQUENCE
+2) Build the hardware by following `docs/hardware_assembly_guide.md` and `docs/implementation_guide.md`
+3) Review the calibration notes in `docs/implementation_guide.md`
+4) Run `python app/main.py`
+5) Connect Camera, Connect Controller, press RESET/ARM, then START SEQUENCE
 
 ---
 
@@ -27,11 +29,49 @@ APIS (Latin for 'bee') is a control system for an automated 2-axis polarization 
 ## 2. Requirements
 
 ### Hardware
+- Hardware assembly guide: `docs/hardware_assembly_guide.md`
+  - Follow this guide for the printed parts, stage stack-up, bearings, and gear assembly.
+- Hardware implementation guide: `docs/implementation_guide.md`
+  - Follow this guide for the physical build, wiring, calibration, and verification steps.
+- Controller: Arduino Uno (used in our lab setup; other compatible Arduino boards may also work)
 - Polarizer motor (Axis 1): SG90 servo @ Pin 10
 - Sample motor (Axis 2): HS-318 servo @ Pin 11
 - Camera: XIMEA USB 3.0/3.1 camera
-- Power: External 5V (>=2A) for servos
-- Common ground between Arduino GND and servo PSU GND
+- Polarizer film: Edmund Optics `50 mm Dia. Linear Polarizing Film (XP42-18)`, PN `29490`
+- Analyzer polarizer: mount a second linear polarizer in front of the camera lens for cross-polarization imaging
+- Backlight: MORITEX MEBL-CW7050 with MLEK-A080W2LR (used in our lab setup)
+  - Other backlight models can be used.
+  - Mechanical/optical design should be adapted to the selected backlight specifications.
+- Bearing balls: McMaster-Carr `9292K74`, hard wear-resistant 52100 alloy steel balls, `5.5 mm` diameter
+- Fasteners: M3 screws for printed-part assembly and support-layer fastening
+- Threaded inserts: Female-thread brass knurled threaded insert embedment nuts (heat-set inserts)
+  - Inserts are embedded into the printed parts with a soldering iron before final mechanical assembly.
+- External power adapter: UNIFIVE UN318-1215, 12V 1.5A
+- Servo power regulator: LM2596/LM2596S DC-DC buck converter module
+  - Example: JTAREA LM2596 adjustable module (4.0-40V to 1.25-37V, 2A, LED voltmeter)
+  - Role in this implementation: `VIN/GND` from Arduino feeds the regulator input, and the regulator output powers the HS-318 servo.
+- Printed STL parts:
+  - `parts/support_1stfloor.stl`
+  - `parts/support_2ndfloor.stl`
+  - `parts/support_3rdfloor.stl`
+  - `parts/support_4thfloor.stl`
+  - `parts/polarizer_stage_gear.stl`
+  - `parts/film_stage_gear.stl`
+  - `parts/servo_gear.stl`
+- Power wiring used in this implementation
+  - `UNIFIVE UN318-1215 12V 1.5A` powers the Arduino.
+  - `Arduino VIN/GND` is connected to the regulator `VIN/GND`.
+  - `Arduino 5V/GND` powers the SG90 servo.
+  - `Regulator VOUT/GND` powers the HS-318 servo.
+  - Arduino and both servos share ground.
+- Calibration
+  - Both polarizer and sample stages use an image-derived calibration ratio in Python.
+  - Current stage calibration is based on `data/calibrationsample/normal`.
+  - Current calibrated stage-to-servo ratio is `1.059` for both axes.
+  - With the current `0-180` servo command range, the calibrated software max angle is `169 deg` per stage.
+  - Re-run calibration after reprinting parts, changing gear fit, or remounting servos.
+  - For the cross-polarized crystallinity imaging workflow targeted by this build, the required operating states fall within a limited angular working envelope, so a compact servo-driven transmission was appropriate for the current system.
+  - If a future version needs reliable motion well beyond this working envelope, upgrade the mechanical drive by changing the transmission ratio or moving to a stepper-based axis.
 
 ### Software
 - Python 3.9+
@@ -75,6 +115,8 @@ Open `firmware/APIS_Firmware/APIS_Firmware.ino` and upload to your Arduino.
 python app/main.py
 ```
 
+If you are assembling the hardware from scratch, complete the mechanical assembly in `docs/hardware_assembly_guide.md` and the wiring/verification steps in `docs/implementation_guide.md` before running the GUI.
+
 ---
 
 ## 5. App Usage Guide
@@ -91,12 +133,15 @@ python app/main.py
 - If XIMEA is not available, the app falls back to DummyCamera
 
 ### Manual Motor Control (Absolute Movement)
-- Set absolute angle (0-180) and click Move
+- Set absolute stage angle within the calibrated software range and click Move
 - +45 buttons increment by 45 degrees
 
 ### Camera Settings
 - Set exposure (us) and gain (dB)
 - Click Apply Settings
+- For the current XIMEA acquisition baseline, auto white balance is disabled during capture.
+- Fixed white balance is currently `R=1.40`, `G=1.00`, `B=1.20` for both Normal and Crosspol acquisition.
+- Re-check the fixed WB values if illumination, analyzer/polarizer alignment, or optics are changed.
 
 ### Live View and Snapshot
 - Live view shows the camera stream
@@ -107,9 +152,9 @@ python app/main.py
 - Set Save Directory and Sample ID
 - Choose modes: Crosspol / Normal
 - Set exposures (defaults: Crosspol 50000 us, Normal 12000 us)
-- Set angles (list or range)
+- Set angles (list or range, within the calibrated software range)
   - List: `90,60,45,30,0`
-  - Range: `0:180:15`
+  - Range: `0:169:15`
 - Settling Time: motor settle delay after each move
 
 ### Polarizer Angles (Sequence)
@@ -142,6 +187,7 @@ python app/main.py
 
 - Automated tests: `tests/test_mock_serial.py`
 - Manual hardware check: `scripts/check_hardware.py`
+- Raw servo endpoint test (within firmware-supported `0-180` servo range): `scripts/test_servo_limits.py`
 - Distribution includes `check_hardware` for quick COM port and ESTOP validation
 
 ---

@@ -128,17 +128,30 @@ class XimeaCamera:
             except Exception:
                 logging.warning("XIMEA: get_imgdataformat not available.")
             
-            # White Balance (Reference values - Commented out for test)
-            # If colors look gray, these specific gains might be cancelling them out for this light source
-            # if self._cam.is_auto_wb():
-            #      self._cam.disable_auto_wb()
-            # self._cam.set_wb_kr(1.531)
-            # self._cam.set_wb_kg(1.0)
-            # self._cam.set_wb_kb(1.305)
-            
-            # Enable Auto WB if available for better color in general lighting
-            if not self._cam.is_auto_wb():
-                self._cam.enable_auto_wb()
+            # Keep acquisition white balance fixed so normal/crosspol images remain comparable.
+            try:
+                if config.XIMEA_USE_FIXED_WB:
+                    try:
+                        if self._cam.is_auto_wb():
+                            self._cam.disable_auto_wb()
+                    except Exception:
+                        self._cam.disable_auto_wb()
+
+                    self._cam.set_wb_kr(config.XIMEA_WB_KR)
+                    self._cam.set_wb_kg(config.XIMEA_WB_KG)
+                    self._cam.set_wb_kb(config.XIMEA_WB_KB)
+                    logging.info(
+                        "XIMEA: Fixed WB enabled (R=%.2f, G=%.2f, B=%.2f)",
+                        config.XIMEA_WB_KR,
+                        config.XIMEA_WB_KG,
+                        config.XIMEA_WB_KB,
+                    )
+                else:
+                    if not self._cam.is_auto_wb():
+                        self._cam.enable_auto_wb()
+                    logging.info("XIMEA: Auto WB enabled.")
+            except Exception as e:
+                logging.warning(f"XIMEA: White-balance configuration failed: {e}")
             
             # Disable Auto Exposure / Gain (Critical)
             self._cam.disable_aeag()

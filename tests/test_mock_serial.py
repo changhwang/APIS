@@ -67,11 +67,11 @@ class TestPicsController(unittest.TestCase):
         self.ctrl.ser = mock_ser
         self.ctrl.is_connected = True
         
-        mock_ser.readline.return_value = b'OK 10 090\n'
+        mock_ser.readline.return_value = b'OK 10 095\n'
         
         success = self.ctrl.rotate_polarizer(90)
         self.assertTrue(success)
-        mock_ser.write.assert_called_with(b'10090\n')
+        mock_ser.write.assert_called_with(b'10095\n')
 
     @patch('serial.Serial')
     def test_emergency_stop(self, mock_serial_cls):
@@ -98,13 +98,26 @@ class TestPicsController(unittest.TestCase):
         self.ctrl.is_connected = True
         
         # Returns: Empty (timeout), Empty (timeout), OK (success)
-        mock_ser.readline.side_effect = [b'', b'', b'OK 11 045\n']
+        mock_ser.readline.side_effect = [b'', b'', b'OK 11 048\n']
         
         with patch('time.sleep', return_value=None): # Skip backoff wait
             success = self.ctrl.rotate_sample(45)
             
         self.assertTrue(success)
         self.assertEqual(mock_ser.write.call_count, 3) # Tried 3 times
+
+    @patch('serial.Serial')
+    def test_sample_angle_rejects_if_servo_mapping_exceeds_limit(self, mock_serial_cls):
+        mock_ser = MagicMock()
+        mock_serial_cls.return_value = mock_ser
+        mock_ser.is_open = True
+        self.ctrl.ser = mock_ser
+        self.ctrl.is_connected = True
+
+        success = self.ctrl.rotate_sample(180)
+
+        self.assertFalse(success)
+        mock_ser.write.assert_not_called()
 
 if __name__ == '__main__':
     unittest.main()
