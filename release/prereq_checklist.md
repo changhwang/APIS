@@ -19,8 +19,9 @@
 ## 4) Sequence Smoke Test
 - Set Sample ID and Save Directory
 - Run a short sequence
-- Default sequence baseline: Normal `12000 us`, Crosspol `50000 us`
-- Verify TIFF images and {SampleID}/{SampleID}_log.csv are created
+- Default sequence baseline: Normal `18000 us`, Crosspol `50000 us`
+- Verify RAW16 TIFF images, `{SampleID}/{SampleID}_log.csv`, and `{SampleID}/{SampleID}_metadata.json` are created
+- Verify live view returns after the sequence finishes
 
 Troubleshooting order
 1) XIMEA drivers

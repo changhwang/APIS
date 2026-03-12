@@ -71,8 +71,8 @@ class MainWindow(QMainWindow):
         self._logged_channel_stats = False
         self._force_bgr_swap = False
         self._last_frame_rgb = None
-        self._exp_cross_last = 50000
-        self._exp_normal_last = 12000
+        self._exp_cross_last = config.XIMEA_DEFAULT_CROSSPOL_EXPOSURE_US
+        self._exp_normal_last = config.XIMEA_DEFAULT_NORMAL_EXPOSURE_US
         
         # Initial UI Update
         self.update_state_ui(STATE_DISCONNECTED)
@@ -115,6 +115,7 @@ class MainWindow(QMainWindow):
         # Right Panel (Sequence)
         right_panel = QVBoxLayout()
         right_panel.addWidget(self.create_sequence_group())
+        right_panel.addWidget(self.create_image_conversion_group())
         right_panel.addStretch()
         content_layout.addLayout(right_panel, 1)
 
@@ -226,7 +227,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(QLabel("Exposure (us):"), 0, 0)
         self.spin_exp = QSpinBox()
         self.spin_exp.setRange(100, 1000000)
-        self.spin_exp.setValue(12000)
+        self.spin_exp.setValue(config.XIMEA_DEFAULT_NORMAL_EXPOSURE_US)
         self.spin_exp.setSingleStep(1000)
         layout.addWidget(self.spin_exp, 0, 1)
         
@@ -243,11 +244,12 @@ class MainWindow(QMainWindow):
         self.spin_exp.valueChanged.connect(self.update_status_info)
         self.spin_gain.valueChanged.connect(self.update_status_info)
         
-        lbl_rec = QLabel("Rec: Crosspol=50,000us (50ms), Normal=12,000us (12ms)")
+        lbl_rec = QLabel("Rec: Crosspol=50,000us (50ms), Normal=18,000us (18ms)")
         lbl_rec.setStyleSheet("color: gray; font-size: 10px;")
         layout.addWidget(lbl_rec, 3, 0, 1, 2)
         
         grp.setLayout(layout)
+        self.grp_camera = grp
         return grp
 
     def create_manual_control_group(self):
@@ -360,14 +362,14 @@ class MainWindow(QMainWindow):
         layout.addWidget(QLabel("Crosspol Exposure (us):"), 3, 0)
         self.spin_exp_cross = QSpinBox()
         self.spin_exp_cross.setRange(100, 1000000)
-        self.spin_exp_cross.setValue(50000)
+        self.spin_exp_cross.setValue(config.XIMEA_DEFAULT_CROSSPOL_EXPOSURE_US)
         self.spin_exp_cross.setSingleStep(1000)
         layout.addWidget(self.spin_exp_cross, 3, 1, 1, 2)
         
         layout.addWidget(QLabel("Normal Exposure (us):"), 4, 0)
         self.spin_exp_normal = QSpinBox()
         self.spin_exp_normal.setRange(100, 1000000)
-        self.spin_exp_normal.setValue(12000)
+        self.spin_exp_normal.setValue(config.XIMEA_DEFAULT_NORMAL_EXPOSURE_US)
         self.spin_exp_normal.setSingleStep(1000)
         layout.addWidget(self.spin_exp_normal, 4, 1, 1, 2)
         
@@ -396,6 +398,30 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.lbl_seq_status, 9, 0, 1, 3)
         
         grp.setLayout(layout)
+        return grp
+
+    def create_image_conversion_group(self):
+        grp = QGroupBox("Image Conversion")
+        layout = QGridLayout()
+
+        layout.addWidget(QLabel("Source Directory:"), 0, 0)
+        self.edt_convert_dir = QLineEdit(os.path.join(os.getcwd(), "data"))
+        layout.addWidget(self.edt_convert_dir, 0, 1)
+        self.btn_convert_browse = QPushButton("...")
+        self.btn_convert_browse.clicked.connect(self.on_conversion_browse)
+        layout.addWidget(self.btn_convert_browse, 0, 2)
+
+        lbl_hint = QLabel("Converts RAW16 TIFFs in this folder and its direct child folders to RGB8 previews.")
+        lbl_hint.setWordWrap(True)
+        lbl_hint.setStyleSheet("color: gray; font-size: 10px;")
+        layout.addWidget(lbl_hint, 1, 0, 1, 3)
+
+        self.btn_convert_rgb = QPushButton("Convert RAW16 to RGB")
+        self.btn_convert_rgb.clicked.connect(self.on_convert_raw16_to_rgb)
+        layout.addWidget(self.btn_convert_rgb, 2, 0, 1, 3)
+
+        grp.setLayout(layout)
+        self.grp_conversion = grp
         return grp
 
     # --- LOGIC SLOTS ---
@@ -436,44 +462,89 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "Connection Failed", str(e))
                 self.log(f"Connection Error: {e}", "ERROR")
 
+    def _is_camera_connected(self):
+        return bool(self.cam_thread is not None or getattr(self.cam, "is_open", False))
+
+    def _set_camera_status(self, status, color):
+        self.lbl_cam_status.setText(f" | Camera: {status}")
+        self.lbl_cam_status.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {color};")
+
+    def _refresh_camera_ui(self):
+        camera_connected = self._is_camera_connected()
+        sequence_busy = self.seq_thread is not None and self.seq_thread.isRunning()
+        camera_controls_enabled = camera_connected and self.current_state != STATE_RUNNING and not sequence_busy
+        if getattr(self, "grp_camera", None):
+            self.grp_camera.setEnabled(camera_controls_enabled)
+        if getattr(self, "grp_live", None):
+            self.grp_live.setEnabled(camera_controls_enabled)
+        if getattr(self, "grp_conversion", None):
+            self.grp_conversion.setEnabled(not sequence_busy and self.current_state != STATE_RUNNING)
+        self.btn_cam_connect.setEnabled(self.current_state != STATE_RUNNING and not sequence_busy)
+        self.btn_connect.setEnabled(self.current_state != STATE_RUNNING and not sequence_busy)
+
+    def _start_camera_thread(self):
+        if self.cam_thread:
+            return
+        if hasattr(self.cam, "configure_live_mode"):
+            self.cam.configure_live_mode(self.spin_exp.value(), self.spin_gain.value())
+        self.cam_thread = CameraThread(self.cam)
+        self.cam_thread.new_frame.connect(self.on_new_frame)
+        self.cam_thread.error_occurred.connect(self.on_cam_error)
+        self.cam_thread.start()
+
+    def _stop_camera_thread(self):
+        had_thread = self.cam_thread is not None
+        if self.cam_thread:
+            self.cam_thread.stop()
+            self.cam_thread = None
+        return had_thread
+
+    def _disconnect_camera(self, log_message=True):
+        self._stop_camera_thread()
+        try:
+            if hasattr(self.cam, "close"):
+                self.cam.close()
+        except Exception as e:
+            logging.error(f"Camera close failed: {e}")
+        self.btn_cam_connect.setText("Connect Camera")
+        self._set_camera_status("DISCONNECTED", "gray")
+        self.lbl_live.setText("Camera Disconnected")
+        self._last_frame_rgb = None
+        self._refresh_camera_ui()
+        if log_message:
+            self.log("Camera Disconnected.")
+
+    def _set_camera_error_ui(self, message="Camera Error"):
+        self._stop_camera_thread()
+        try:
+            if hasattr(self.cam, "close"):
+                self.cam.close()
+        except Exception as e:
+            logging.error(f"Camera close failed during error cleanup: {e}")
+        self.btn_cam_connect.setText("Connect Camera")
+        self._set_camera_status("ERROR", "red")
+        self.lbl_live.setText(message)
+        self._last_frame_rgb = None
+        self._refresh_camera_ui()
+
 
     def on_toggle_camera(self):
         """Camera Connection Toggle"""
-        if self.cam_thread:
-            # Disconnect
-            self.cam_thread.stop()
-            self.cam_thread = None
-            self.btn_cam_connect.setText("Connect Camera")
-            self.grp_camera = self.findChild(QGroupBox, "Camera Settings")
-            if self.grp_camera:
-                self.grp_camera.setEnabled(False)
-            if self.grp_live:
-                self.grp_live.setEnabled(False)
-            self.log("Camera Disconnected.")
-            self.lbl_live.setText("Camera Disconnected")
-            
-            self.lbl_cam_status.setText(" | Camera: DISCONNECTED")
-            self.lbl_cam_status.setStyleSheet("font-size: 16px; font-weight: bold; color: gray;")
+        if self.current_state == STATE_RUNNING:
+            return
+        if self._is_camera_connected():
+            self._disconnect_camera()
+            self.update_state_ui(self.current_state)
         else:
-            # Connect
             try:
-                self.cam_thread = CameraThread(self.cam)
-                self.cam_thread.new_frame.connect(self.on_new_frame)
-                self.cam_thread.error_occurred.connect(self.on_cam_error) # Connect Error Signal
-                self.cam_thread.start()
-                
+                self._start_camera_thread()
                 self.btn_cam_connect.setText("Disconnect Camera")
-                self.grp_camera = self.findChild(QGroupBox, "Camera Settings")
-                if self.grp_camera:
-                    self.grp_camera.setEnabled(True)
-                if self.grp_live:
-                    self.grp_live.setEnabled(True)
+                self._set_camera_status("CONNECTED", "green")
+                self._refresh_camera_ui()
+                self.update_state_ui(self.current_state)
                 self.log("Camera Connected.")
-                
-                self.lbl_cam_status.setText(" | Camera: CONNECTED")
-                self.lbl_cam_status.setStyleSheet("font-size: 16px; font-weight: bold; color: green;")
             except Exception as e:
-                 QMessageBox.critical(self, "Camera Error", str(e))
+                QMessageBox.critical(self, "Camera Error", str(e))
 
     def on_estop(self):
         self.log(">>> EMERGENCY STOP PRESSED <<<", "ERROR")
@@ -485,8 +556,6 @@ class MainWindow(QMainWindow):
         # 2. Logic ESTOP
         if self.seq_thread and self.seq_thread.isRunning():
             self.seq_thread.abort()
-            self.seq_thread.terminate() # Forceful term if needed, but abort flag preferred
-            self.seq_thread = None
             
         # 3. UI Latch
         self.update_state_ui(STATE_LATCHED)
@@ -548,6 +617,9 @@ class MainWindow(QMainWindow):
         if self.current_state != STATE_ARMED:
              QMessageBox.warning(self, "Not Armed", "System must be ARMED to start sequence.")
              return
+        if not self._is_camera_connected():
+            QMessageBox.warning(self, "Camera Not Connected", "Connect the camera before starting a sequence.")
+            return
         
         do_crosspol = self.chk_crosspol.isChecked()
         do_normal = self.chk_normal.isChecked()
@@ -573,15 +645,14 @@ class MainWindow(QMainWindow):
         
         # Update config
         config.SETTLING_TIME_S = settling
+
+        live_thread_was_running = self._stop_camera_thread()
         
         # UI -> RUNNING
         self.update_state_ui(STATE_RUNNING)
         self.lbl_seq_status.setText("Running...")
         self.log(f"Starting Sequence for {sid}...")
         
-        # Pause Live View
-        if self.cam_thread:
-            self.cam_thread.set_pause(True)
         self.lbl_live_overlay.show()
 
         self.update_status_info()
@@ -595,7 +666,10 @@ class MainWindow(QMainWindow):
             exp_normal,
             angles,
             do_crosspol,
-            do_normal
+            do_normal,
+            self.spin_exp.value(),
+            self.spin_gain.value(),
+            live_thread_was_running,
         )
         self.seq_thread.progress_update.connect(self.on_seq_progress_msg)
         self.seq_thread.progress_val.connect(self.progress.setValue)
@@ -614,26 +688,55 @@ class MainWindow(QMainWindow):
     def on_seq_error(self, err_msg):
         self.log(err_msg, "ERROR")
         QMessageBox.critical(self, "Sequence Error", err_msg)
-        self.update_state_ui(STATE_ERROR)
         self.restore_ui_after_sequence()
         
     def restore_ui_after_sequence(self):
         self.lbl_live_overlay.hide()
-        if self.cam_thread:
-            self.cam_thread.set_pause(False)
-            
-        # Check actual state logic
+        run_info = getattr(self.sequence_logic, "last_run_info", {}) or {}
+        cleanup_error = run_info.get("cleanup_error")
+        should_restart_live = run_info.get("should_restart_live", False)
+
+        if cleanup_error:
+            self.log(f"Sequence cleanup failed: {cleanup_error}", "ERROR")
+            self.update_state_ui(STATE_ERROR)
+            self._set_camera_error_ui("Camera Error")
+            self.lbl_seq_status.setText("Error")
+            self.seq_thread = None
+            return
+
+        if should_restart_live:
+            try:
+                self._start_camera_thread()
+                self.btn_cam_connect.setText("Disconnect Camera")
+                self._set_camera_status("CONNECTED", "green")
+            except Exception as e:
+                self.log(f"Failed to restart live view: {e}", "ERROR")
+                self.update_state_ui(STATE_ERROR)
+                self._set_camera_error_ui("Camera Error")
+                self.lbl_seq_status.setText("Error")
+                self.seq_thread = None
+                return
+        elif not self._is_camera_connected():
+            self.btn_cam_connect.setText("Connect Camera")
+            self._set_camera_status("DISCONNECTED", "gray")
+
         if self.ctrl.is_connected:
-             self.update_state_ui(self.ctrl.get_state())
+            self.update_state_ui(self.ctrl.get_state())
         else:
-             self.update_state_ui(STATE_DISCONNECTED)
+            self.update_state_ui(STATE_DISCONNECTED)
+        self._refresh_camera_ui()
+        self.lbl_seq_status.setText("Idle")
+        self.seq_thread = None
 
     def on_cam_apply(self):
-        if self.cam_thread:
+        if self._is_camera_connected() and self.current_state != STATE_RUNNING:
             exp = self.spin_exp.value()
             gain = self.spin_gain.value()
-            self.cam_thread.set_exposure(exp)
-            self.cam_thread.set_gain(gain)
+            if hasattr(self.cam, "configure_live_mode"):
+                self.cam.configure_live_mode(exp, gain)
+            elif self.cam_thread:
+                self.cam_thread.set_exposure(exp)
+                self.cam_thread.set_gain(gain)
             self.log(f"Camera Params Applied: {exp}us, {gain}dB")
             self.update_status_info()
 
@@ -686,6 +789,48 @@ class MainWindow(QMainWindow):
         d = QFileDialog.getExistingDirectory(self, "Select Snapshot Directory")
         if d:
             self.edt_snapshot_dir.setText(d)
+
+    def on_conversion_browse(self):
+        d = QFileDialog.getExistingDirectory(self, "Select RAW16 Source Directory")
+        if d:
+            self.edt_convert_dir.setText(d)
+
+    def on_convert_raw16_to_rgb(self):
+        source_dir = self.edt_convert_dir.text().strip()
+        if not source_dir:
+            QMessageBox.warning(self, "No Directory", "Select a source directory first.")
+            return
+
+        try:
+            self.log(f"Starting RAW16 -> RGB conversion: {source_dir}")
+            summary = io.convert_raw16_tree_to_rgb_preview(source_dir)
+        except Exception as e:
+            self.log(f"RAW16 -> RGB conversion failed: {e}", "ERROR")
+            QMessageBox.critical(self, "Conversion Error", str(e))
+            return
+
+        converted = len(summary["converted"])
+        skipped = len(summary["skipped"])
+        errors = len(summary["errors"])
+        output_dir = summary["output_dir"]
+
+        self.log(
+            f"RAW16 -> RGB conversion complete. Converted={converted}, Skipped={skipped}, Errors={errors}, Output={output_dir}"
+        )
+
+        if converted == 0:
+            QMessageBox.warning(
+                self,
+                "No RAW16 Files Converted",
+                "No eligible RAW16 TIFF files were found in the selected folder or its direct child folders.",
+            )
+            return
+
+        QMessageBox.information(
+            self,
+            "Conversion Complete",
+            f"Converted {converted} file(s).\nSkipped: {skipped}\nErrors: {errors}\nOutput: {output_dir}",
+        )
 
     def on_new_frame(self, frame):
         try:
@@ -841,23 +986,15 @@ class MainWindow(QMainWindow):
         self.btn_pol_p45.setEnabled(enable_manual)
         self.btn_samp_p45.setEnabled(enable_manual)
         
-        self.btn_start.setEnabled(enable_start)
-        self.grp_camera = self.findChild(QGroupBox, "Camera Settings")
-        if self.grp_camera:
-            self.grp_camera.setEnabled(state != STATE_RUNNING and self.cam_thread is not None)
+        sequence_busy = self.seq_thread is not None and self.seq_thread.isRunning()
+        self.btn_start.setEnabled(enable_start and self._is_camera_connected() and not sequence_busy)
+        self._refresh_camera_ui()
 
     def on_cam_error(self, err_msg):
         self.log(err_msg, "ERROR")
         QMessageBox.critical(self, "Camera Error", err_msg)
         self.update_state_ui(STATE_ERROR)
-        # Force disconnect UI
-        if self.cam_thread:
-            self.cam_thread.stop()
-            self.cam_thread = None
-        self.btn_cam_connect.setText("Connect Camera")
-        self.lbl_cam_status.setText(" | Camera: ERROR")
-        self.lbl_cam_status.setStyleSheet("font-size: 16px; font-weight: bold; color: red;")
-        self.lbl_live.setText("Camera Error")
+        self._set_camera_error_ui("Camera Error")
 
     def on_log_copy(self):
         QApplication.clipboard().setText(self.log_text.toPlainText())
@@ -874,18 +1011,17 @@ class MainWindow(QMainWindow):
         """Cleanup on Close"""
         self.log("Closing application...", "WARN")
         
-        # Stop Camera Thread
-        if self.cam_thread:
-            self.cam_thread.stop()
-        
-        # Close Camera Logic
-        if hasattr(self.cam, 'close'):
-            self.cam.close()
-
         # Stop Sequence Thread
         if self.seq_thread:
             self.seq_thread.abort()
             self.seq_thread.wait()
+        
+        # Stop Camera Thread
+        self._stop_camera_thread()
+        
+        # Close Camera Logic
+        if hasattr(self.cam, 'close'):
+            self.cam.close()
             
         # Close Serial
         if self.ctrl:

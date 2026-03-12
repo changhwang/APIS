@@ -3,7 +3,7 @@ import os
 import time
 import logging
 import cv2
-from PyQt6.QtCore import QThread, pyqtSignal, QMutex, QWaitCondition
+from PyQt6.QtCore import QThread, pyqtSignal, QMutex
 import numpy as np
 from apis import config
 
@@ -13,18 +13,26 @@ sys.path.append(".")
 # --- Dummy Camera Simulation (Replace with XIMEA SDK later) ---
 class DummyCamera:
     def __init__(self):
-        self.exposure_us = 12000
+        self.exposure_us = config.XIMEA_DEFAULT_NORMAL_EXPOSURE_US
         self.gain = 0.0
         self.width = 640
         self.height = 480
         self._streaming = False
         self.is_open = False
+        self._mode = "live"
+        self._imgdataformat = "XI_RGB24"
+        self._gamma_y = 1.0
+        self._gamma_c = 1.0
 
     def check_available(self):
         return True
 
     def open(self):
+        if self.is_open:
+            return
         self.is_open = True
+        self._streaming = True
+        self.configure_live_mode(self.exposure_us, self.gain)
         logging.info("Dummy Camera Opened.")
 
     def close(self):
@@ -37,6 +45,11 @@ class DummyCamera:
 
     def stop_acquisition(self):
         self._streaming = False
+        if self.is_open:
+            try:
+                self._cam.stop_acquisition()
+            except Exception:
+                pass
 
     def set_exposure(self, us):
         self.exposure_us = us
@@ -45,24 +58,57 @@ class DummyCamera:
     def set_gain(self, gain):
         self.gain = gain
         logging.info(f"CAM: Gain set to {gain}")
+
+    def configure_live_mode(self, exposure_us, gain_db):
+        self._mode = "live"
+        self._imgdataformat = "XI_RGB24"
+        self._streaming = True
+        self.set_exposure(exposure_us)
+        self.set_gain(gain_db)
+
+    def configure_sequence_mode(self):
+        self._mode = "sequence"
+        self._imgdataformat = "XI_RAW16"
+        self._streaming = True
+        self.set_gain(0.0)
+
+    def get_capture_metadata(self):
+        return {
+            "camera_model": "DummyCamera",
+            "serial": "dummy",
+            "camera_backend": "dummy",
+            "imgdataformat": self._imgdataformat,
+            "sensor_bit_depth": 8,
+            "image_data_bit_depth": 16 if self._mode == "sequence" else 8,
+            "output_bit_depth": 16 if self._mode == "sequence" else 8,
+            "cfa_pattern": "NONE",
+            "gammaY": self._gamma_y,
+            "gammaC": self._gamma_c,
+            "wb_r": config.XIMEA_WB_KR,
+            "wb_g": config.XIMEA_WB_KG,
+            "wb_b": config.XIMEA_WB_KB,
+            "wb_applied": self._mode != "sequence",
+            "gain_db": self.gain,
+            "resolution": [self.width, self.height],
+            "roi": {"x": 0, "y": 0, "w": self.width, "h": self.height},
+        }
         
-    def get_image(self):
+    def get_image(self, raise_on_error=False):
         if not self._streaming:
             return None
-        # Simulate an image pattern
-        img = np.zeros((self.height, self.width), dtype=np.uint8)
-        # Moving stripe to show life
+        dtype = np.uint16 if self._mode == "sequence" else np.uint8
+        max_value = 1023 if self._mode == "sequence" else 255
+        img = np.zeros((self.height, self.width), dtype=dtype)
         t = int(time.time() * 20) % self.width
-        cv2.line(img, (t, 0), (t, self.height), 255, 3)
-        # Add noise based on gain
+        cv2.line(img, (t, 0), (t, self.height), max_value, 3)
         if self.gain > 0:
-            noise = np.random.normal(0, self.gain * 5, img.shape).astype(np.uint8)
-            img = cv2.add(img, noise)
+            noise = np.random.normal(0, self.gain * 5, img.shape)
+            img = np.clip(img.astype(np.float32) + noise, 0, max_value).astype(dtype)
         return img
     
     def capture(self):
         """Simulate single capture for sequence"""
-        return self.get_image()
+        return self.get_image(raise_on_error=True)
     
     def stop_live(self):
         self._streaming = False
@@ -75,9 +121,14 @@ class XimeaCamera:
     def __init__(self):
         self._cam = None
         self._streaming = False
-        self.exposure_us = 12000
+        self.exposure_us = config.XIMEA_DEFAULT_NORMAL_EXPOSURE_US
         self.gain = 0.0
         self.is_open = False
+        self._mode = "live"
+        self._imgdataformat = "XI_RGB24"
+        self._gamma_y = 1.0
+        self._gamma_c = 1.0
+        self._device_info = {}
         
         try:
             from ximea import xiapi
@@ -108,84 +159,59 @@ class XimeaCamera:
     def open(self):
         if not self.xiapi:
             raise RuntimeError("XIMEA SDK not installed.")
+        if self.is_open and self._cam:
+            return
         
         self._cam = self.xiapi.Camera()
         self._cam.open_device() # Open first available
         
         # Log device info
-        model_name = self._cam.get_device_name()
-        serial_num = self._cam.get_device_sn()
+        model_name = self._decode_if_bytes(self._safe_get("get_device_name"))
+        serial_num = self._decode_if_bytes(self._safe_get("get_device_sn"))
+        self._device_info = {
+            "camera_model": model_name,
+            "serial": serial_num,
+            "camera_backend": "ximea",
+        }
         logging.info(f"XIMEA: Model={model_name}, Serial={serial_num}")
         
         # Configure default from Reference Code
         try:
-            self._cam.set_imgdataformat('XI_RGB24')
-            self._cam.set_exposure(10000) # 10ms default (Reduced from 50ms to prevent saturation)
-            self._cam.set_gain(0.0)
-            try:
-                fmt = self._cam.get_imgdataformat()
-                logging.info(f"XIMEA: imgdataformat={fmt}")
-            except Exception:
-                logging.warning("XIMEA: get_imgdataformat not available.")
-            
-            # Keep acquisition white balance fixed so normal/crosspol images remain comparable.
-            try:
-                if config.XIMEA_USE_FIXED_WB:
-                    try:
-                        if self._cam.is_auto_wb():
-                            self._cam.disable_auto_wb()
-                    except Exception:
-                        self._cam.disable_auto_wb()
-
-                    self._cam.set_wb_kr(config.XIMEA_WB_KR)
-                    self._cam.set_wb_kg(config.XIMEA_WB_KG)
-                    self._cam.set_wb_kb(config.XIMEA_WB_KB)
-                    logging.info(
-                        "XIMEA: Fixed WB enabled (R=%.2f, G=%.2f, B=%.2f)",
-                        config.XIMEA_WB_KR,
-                        config.XIMEA_WB_KG,
-                        config.XIMEA_WB_KB,
-                    )
-                else:
-                    if not self._cam.is_auto_wb():
-                        self._cam.enable_auto_wb()
-                    logging.info("XIMEA: Auto WB enabled.")
-            except Exception as e:
-                logging.warning(f"XIMEA: White-balance configuration failed: {e}")
-            
             # Disable Auto Exposure / Gain (Critical)
             self._cam.disable_aeag()
-            
-            # Data output safety
-            # self._cam.set_output_data_bit_depth(8) # Ensure 8-bit if needed
 
             # Ensure Free Run (Disable Trigger)
             try:
                 self._cam.set_trigger_source('XI_TRG_OFF')
             except Exception:
-                pass 
-            
-            # self._cam.start_acquisition() # Removed for per-frame acquisition
+                pass
+
             self.is_open = True
             self._streaming = True
-            logging.info("XIMEA Camera Opened (Ref Settings Applied).")
+            self._set_gamma_defaults()
+            self.configure_live_mode(self.exposure_us, self.gain)
+            logging.info("XIMEA Camera Opened.")
             
         except Exception as e:
             # If config fails, close
             try:
                 self._cam.close_device()
-            except: 
+            except Exception:
                 pass
+            self._cam = None
+            self.is_open = False
             raise e
 
     def close(self):
         if self._cam and self.is_open:
             try:
                 self._cam.stop_acquisition()
-            except: pass
+            except Exception:
+                pass
             self._cam.close_device()
             self.is_open = False
             self._streaming = False
+            self._cam = None
             logging.info("XIMEA Camera Closed.")
 
     def start_acquisition(self):
@@ -209,11 +235,75 @@ class XimeaCamera:
                 self._cam.set_gain(gain)
             except Exception as e:
                 logging.error(f"CAM Set Gain Error: {e}")
+
+    def configure_live_mode(self, exposure_us, gain_db):
+        self.open()
+        self._mode = "live"
+        self._imgdataformat = "XI_RGB24"
+        self._set_gamma_defaults()
+        self._apply_white_balance()
+        self._cam.set_imgdataformat(self._imgdataformat)
+        self.set_exposure(exposure_us)
+        self.set_gain(gain_db)
+        logging.info(
+            "XIMEA: Live mode configured (fmt=%s, exposure=%sus, gain=%.2fdB, gammaY=%.2f, gammaC=%.2f)",
+            self._safe_get("get_imgdataformat", self._imgdataformat),
+            self.exposure_us,
+            self.gain,
+            self._safe_get("get_gammaY", self._gamma_y),
+            self._safe_get("get_gammaC", self._gamma_c),
+        )
+
+    def configure_sequence_mode(self):
+        self.open()
+        self._mode = "sequence"
+        self._imgdataformat = "XI_RAW16"
+        self._set_gamma_defaults()
+        self._cam.set_imgdataformat(self._imgdataformat)
+        self.set_gain(0.0)
+        logging.info(
+            "XIMEA: Sequence mode configured (fmt=%s, gain=%.2fdB, gammaY=%.2f, gammaC=%.2f)",
+            self._safe_get("get_imgdataformat", self._imgdataformat),
+            self.gain,
+            self._safe_get("get_gammaY", self._gamma_y),
+            self._safe_get("get_gammaC", self._gamma_c),
+        )
+
+    def get_capture_metadata(self):
+        metadata = dict(self._device_info)
+        metadata.update(
+            {
+                "imgdataformat": self._safe_get("get_imgdataformat", self._imgdataformat),
+                "sensor_bit_depth": self._safe_get("get_sensor_bit_depth"),
+                "image_data_bit_depth": self._safe_get("get_image_data_bit_depth"),
+                "output_bit_depth": self._safe_get("get_output_bit_depth"),
+                "cfa_pattern": self._safe_get("get_cfa"),
+                "gammaY": self._safe_get("get_gammaY", self._gamma_y),
+                "gammaC": self._safe_get("get_gammaC", self._gamma_c),
+                "wb_r": self._safe_get("get_wb_kr", config.XIMEA_WB_KR),
+                "wb_g": self._safe_get("get_wb_kg", config.XIMEA_WB_KG),
+                "wb_b": self._safe_get("get_wb_kb", config.XIMEA_WB_KB),
+                "wb_applied": self._mode != "sequence",
+                "gain_db": self.gain,
+                "resolution": [
+                    self._safe_get("get_width"),
+                    self._safe_get("get_height"),
+                ],
+                "roi": {
+                    "x": self._safe_get("get_offsetX", 0),
+                    "y": self._safe_get("get_offsetY", 0),
+                    "w": self._safe_get("get_width"),
+                    "h": self._safe_get("get_height"),
+                },
+            }
+        )
+        return metadata
         
-    def get_image(self):
+    def get_image(self, raise_on_error=False):
         # Only check if camera is open - _streaming is irrelevant for per-frame acquisition
         if not self.is_open:
-            print("DEBUG: get_image() called but camera not open")
+            if raise_on_error:
+                raise RuntimeError("XIMEA camera is not open.")
             return None
         
         try:
@@ -222,26 +312,88 @@ class XimeaCamera:
             
             img = self.xiapi.Image()
             self._cam.get_image(img)  # NO TIMEOUT - reference code style
-            data = img.get_image_data_numpy(invert_rgb_order=True)  # CRITICAL!
+            invert_rgb = self._imgdataformat.startswith("XI_RGB")
+            data = img.get_image_data_numpy(invert_rgb_order=invert_rgb)
             
             self._cam.stop_acquisition()
             return data
         except Exception as e:
             # Try to stop if stuck
-            try: self._cam.stop_acquisition()
-            except: pass
-            
-            print(f"DEBUG: XIMEA get_image failed: {e}")
+            try:
+                self._cam.stop_acquisition()
+            except Exception:
+                pass
+
+            logging.error(f"XIMEA get_image failed: {e}")
+            if raise_on_error:
+                raise RuntimeError(f"XIMEA get_image failed: {e}") from e
             return None
     
     def capture(self):
-        return self.get_image()
+        return self.get_image(raise_on_error=True)
     
     def stop_live(self):
         self._streaming = False
         
     def resume_live(self):
         self._streaming = True
+
+    def _apply_white_balance(self):
+        try:
+            if config.XIMEA_USE_FIXED_WB:
+                try:
+                    if self._cam.is_auto_wb():
+                        self._cam.disable_auto_wb()
+                except Exception:
+                    self._cam.disable_auto_wb()
+
+                self._cam.set_wb_kr(config.XIMEA_WB_KR)
+                self._cam.set_wb_kg(config.XIMEA_WB_KG)
+                self._cam.set_wb_kb(config.XIMEA_WB_KB)
+                logging.info(
+                    "XIMEA: Fixed WB enabled (R=%.2f, G=%.2f, B=%.2f)",
+                    config.XIMEA_WB_KR,
+                    config.XIMEA_WB_KG,
+                    config.XIMEA_WB_KB,
+                )
+            else:
+                if not self._cam.is_auto_wb():
+                    self._cam.enable_auto_wb()
+                logging.info("XIMEA: Auto WB enabled.")
+        except Exception as e:
+            logging.warning(f"XIMEA: White-balance configuration failed: {e}")
+
+    def _set_gamma_defaults(self):
+        self._gamma_y = 1.0
+        self._gamma_c = 1.0
+        try:
+            self._cam.set_gammaY(self._gamma_y)
+            self._cam.set_gammaC(self._gamma_c)
+            logging.info(
+                "XIMEA: Gamma configured (Y=%.2f, C=%.2f)",
+                self._safe_get("get_gammaY", self._gamma_y),
+                self._safe_get("get_gammaC", self._gamma_c),
+            )
+        except Exception as e:
+            logging.warning(f"XIMEA: Gamma configuration failed: {e}")
+
+    def _safe_get(self, getter_name, default=None):
+        if not self._cam:
+            return default
+        getter = getattr(self._cam, getter_name, None)
+        if getter is None:
+            return default
+        try:
+            value = getter()
+        except Exception:
+            return default
+        return self._decode_if_bytes(value)
+
+    @staticmethod
+    def _decode_if_bytes(value):
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+        return value
 
 class CameraThread(QThread):
     new_frame = pyqtSignal(np.ndarray)
@@ -319,7 +471,20 @@ class SequenceThread(QThread):
     finished_ok = pyqtSignal()
     error_occurred = pyqtSignal(str)
     
-    def __init__(self, sequence_logic, save_dir, sample_id, exp_crosspol, exp_normal, angles, do_crosspol, do_normal):
+    def __init__(
+        self,
+        sequence_logic,
+        save_dir,
+        sample_id,
+        exp_crosspol,
+        exp_normal,
+        angles,
+        do_crosspol,
+        do_normal,
+        live_exposure_us,
+        live_gain_db,
+        live_thread_was_running,
+    ):
         super().__init__()
         self.seq = sequence_logic
         self.save_dir = save_dir
@@ -329,6 +494,9 @@ class SequenceThread(QThread):
         self.angles = angles
         self.do_crosspol = do_crosspol
         self.do_normal = do_normal
+        self.live_exposure_us = live_exposure_us
+        self.live_gain_db = live_gain_db
+        self.live_thread_was_running = live_thread_was_running
         
         # Override log callback to emit signal
         self.seq.log_cb = self._on_log
@@ -357,7 +525,10 @@ class SequenceThread(QThread):
                 self.exp_normal,
                 self.angles,
                 self.do_crosspol,
-                self.do_normal
+                self.do_normal,
+                live_exposure_us=self.live_exposure_us,
+                live_gain_db=self.live_gain_db,
+                live_thread_was_running=self.live_thread_was_running,
             )
             self.progress_val.emit(100)
             self.finished_ok.emit()

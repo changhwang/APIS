@@ -315,10 +315,17 @@ Mechanical design should therefore support:
 For the current XIMEA-based acquisition setup:
 
 - Auto exposure / auto gain should remain disabled during capture
+- Camera gamma should remain fixed at `1.0`
 - Auto white balance should remain disabled during capture
 - The current fixed white-balance baseline is `R=1.40`, `G=1.00`, `B=1.20`
 - The same fixed white-balance values should be used for both Normal and Crosspol images so color differences remain comparable across modes
 - Re-evaluate the fixed white-balance values if the illumination path, optics, or analyzer/polarizer alignment changes
+- Live preview should use `XI_RGB24`
+- Sequence capture should use `XI_RAW16`
+- The current validated sequence exposure baseline is:
+  - Normal / PPL: `18000 us`
+  - Crosspol / XPL: `50000 us`
+- Sequence outputs should be saved as Bayer RAW `uint16 TIFF` plus per-sequence CSV and JSON metadata
 
 ## 11. Verification Checklist
 

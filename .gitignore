@@ -15,6 +15,7 @@ env/
 data/
 *.log
 *.jsonl
+plan/
 
 # OS
 .DS_Store
