@@ -21,7 +21,9 @@ APIS (Latin for 'bee') is a control system for an automated 2-axis polarization 
 
 - GUI application (live view, manual motor control, and sequence automation)
 - Safety logic (LATCHED/ARMED, ESTOP, RESET)
-- Image capture + CSV logging
+- Live RGB preview + RGB snapshot capture
+- RAW16 sequence capture + CSV/JSON metadata logging
+- RAW16 to RGB8 preview conversion tool
 - Hardware check tool for quick diagnostics
 
 ---
@@ -139,27 +141,39 @@ If you are assembling the hardware from scratch, complete the mechanical assembl
 ### Camera Settings
 - Set exposure (us) and gain (dB)
 - Click Apply Settings
+- The live-view exposure default is `18000 us`
 - For the current XIMEA acquisition baseline, auto white balance is disabled during capture.
+- Camera gamma is fixed to `1.0` for both live view and sequence capture.
 - Fixed white balance is currently `R=1.40`, `G=1.00`, `B=1.20` for both Normal and Crosspol acquisition.
 - Re-check the fixed WB values if illumination, analyzer/polarizer alignment, or optics are changed.
 
 ### Live View and Snapshot
-- Live view shows the camera stream
-- Snapshot saves TIFF to the selected folder
+- Live view uses `XI_RGB24`
+- Snapshot saves preview RGB TIFF to the selected folder
 - Snapshot metadata is logged to `snapshot_log.csv`
 
 ### Sequence Control
 - Set Save Directory and Sample ID
 - Choose modes: Crosspol / Normal
-- Set exposures (defaults: Crosspol 50000 us, Normal 12000 us)
+- Set exposures (defaults: Crosspol `50000 us`, Normal `18000 us`)
 - Set angles (list or range, within the calibrated software range)
   - List: `90,60,45,30,0`
   - Range: `0:169:15`
 - Settling Time: motor settle delay after each move
+- Sequence capture uses `XI_RAW16` only
+- During sequence capture, live view is paused and restored after completion
+- Sequence images are saved as Bayer RAW `uint16 TIFF` without demosaicing or gamma
 
 ### Polarizer Angles (Sequence)
 - Crosspol: polarizer moves to 90 degrees
 - Normal: polarizer moves to 0 degrees
+
+### Image Conversion
+- Convert saved RAW16 TIFFs into confirmation-only `RGB8` previews
+- Input scope: the selected folder and its immediate child folders
+- Output folder: `<selected_folder>_rgb`
+- Conversion pipeline: demosaic (`GBRG`) -> fixed white balance -> gamma `1/2.2`
+- Original RAW16 files are preserved
 
 ---
 
@@ -170,8 +184,13 @@ If you are assembling the hardware from scratch, complete the mechanical assembl
   - `{SaveDir}/{SampleID}/normal`
 - Log file:
   - `{SaveDir}/{SampleID}/{SampleID}_log.csv`
+- Sequence metadata:
+  - `{SaveDir}/{SampleID}/{SampleID}_metadata.json`
 - Snapshot log:
   - `{SaveDir}/snapshot_log.csv`
+- Optional RGB preview conversion:
+  - `{SelectedFolder}_rgb/`
+  - Example: `{SaveDir}/{SampleID}_rgb/crosspol/*_rgb.tif`
 
 ---
 
@@ -209,7 +228,7 @@ Recommended flow:
 
 Example:
 ```powershell
-.\build\build.ps1 -Version 0.1.1
+.\build\build.ps1 -Version 0.1.2
 ```
 
 ### Distribution package
